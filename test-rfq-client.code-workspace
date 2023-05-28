@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "../test-rfq-client-ui"
+		},
+		{
+			"path": "."
+		},
+		{
+			"path": "../test-rfq-client-hardhat"
+		}
+	],
+	"settings": {}
+}
