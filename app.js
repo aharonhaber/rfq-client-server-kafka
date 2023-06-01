@@ -46,15 +46,21 @@ io.on('connection', (socket) => {
   console.log('A user connected');
 
   // Listen for events from the smart contract
+  
   testRFQContract.events.OracleUpdate({}, (error, event) => {
     if (error) {
       console.error(error);
     } else {
+      //console.log("OracleUpdate parsing : ",event.returnValues.requestUpdate)
+      //console.log("OracleUpdate event : ",event)
+      //console.log("here");
+      //console.log("event = ", event);
       let data = JSON.parse(event.returnValues.requestUpdate);
-      console.log('Start event emitted:', data);
-      socket.emit('startEvent', data);
+      console.log('Update from Oracle received:', data);
+      socket.emit('oracleUpdate', data);
     }
   });
+  
 
   oracleContract.events.NewRequest({}, async (error, event) => {
     if (error) {
@@ -65,7 +71,7 @@ io.on('connection', (socket) => {
       let oracleId = event.returnValues.oracleId;
       console.log('Oracle New Request event emitted:', data);
       console.log('Oracle request Id = :', oracleId);
-
+/* uncomment this to test publishing to dlt without oracle service
       try {
         // Call the start function
         console.log("calling oracle update");
@@ -86,9 +92,47 @@ io.on('connection', (socket) => {
       } catch (error) {
         console.error(error);
       }      
-
+*/
 
     }
+  });
+
+  oracleContract.events.UpdatedRequest({}, async (error, event) => {
+      if (error) {
+        console.error(error);
+      } else {
+        //console.log(event);
+        //let data = JSON.parse(event.returnValues.requestData);
+        //console.log("event = ", event)
+        //let oracleId = event.returnValues.oracleId;
+        //console.log('Oracle Updated Request event emitted:', data);
+        //console.log('Oracle request Id = :', oracleId);
+  /*
+        try {
+          // Call the start function
+          console.log("calling oracle update");
+          let updateData = {
+            symbol: "EURUSD",
+            tenor: "Spot",
+            price: "103.23455"
+          };
+  
+          const result = await oracleContract.methods.updateRequest(
+            oracleId,
+            "12344",
+            JSON.stringify(updateData)
+          ).send(
+      
+            { from: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', gas: 500000 });
+          console.log("finished waiting for oracle update");
+        } catch (error) {
+          console.error(error);
+        }      
+  */
+  
+      }
+
+
   });
 
 
@@ -105,13 +149,21 @@ app.use((req, res, next) => {
   next();
 });
 
+
+function getRandomMinMax(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+
 // REST API endpoint to call the start function of the smart contract
 app.get('/callStartFunction', async (req, res) => {
   try {
+    let rfqId = getRandomMinMax(1,10000);
     // Call the start function
     console.log("calling startRFQ");
-    let requestId = "12345";
+    let requestId = rfqId.toString();
     let requestData = {
+      RFQ_id: requestId,
       symbol: "EURUSD",
       tenor: "Spot"
     }
