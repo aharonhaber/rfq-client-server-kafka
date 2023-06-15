@@ -1,6 +1,7 @@
 ////////////////////////////////////
 
 const express = require('express');
+const bodyParser = require('body-parser');
 const app = express();
 const http = require('http').createServer(app);
 
@@ -22,9 +23,12 @@ const Web3 = require('web3');
 const WebsocketProvider = require('web3-providers-ws');
 
 // Create a new Web3 instance connected to your local Ethereum node
-const web3 = new Web3(new WebsocketProvider('ws://localhost:8545'));
+const dltHostId = process.env.DLTHOSTIP || 'localhost'
+console.log("SETTING DLT HOST ID to " +  dltHostId);
+const web3 = new Web3(new WebsocketProvider('ws://' + dltHostId + ':8545'));
 
-const testRFQJson = require('../test-rfq-client-hardhat/artifacts/contracts/TestRFQRequestor.sol/TestRFQRequestor.json');
+//const testRFQJson = require('../test-rfq-client-hardhat/artifacts/contracts/TestRFQRequestor.sol/TestRFQRequestor.json');
+const testRFQJson = require('./contracts/TestRFQRequestor.json');
 
 const testRFQABI = testRFQJson.abi;
 const testRFQAddress = '0xe7f1725e7734ce288f8367e1bb143e90bb3f0512';
@@ -33,7 +37,8 @@ const testRFQAddress = '0xe7f1725e7734ce288f8367e1bb143e90bb3f0512';
 const testRFQContract = new web3.eth.Contract(testRFQABI, testRFQAddress);
 
 
-const oracleJson = require('../test-rfq-client-hardhat/artifacts/contracts/Oracle.sol/Oracle.json');
+//const oracleJson = require('../test-rfq-client-hardhat/artifacts/contracts/Oracle.sol/Oracle.json');
+const oracleJson = require('./contracts/Oracle.json');
 const oracleABI = oracleJson.abi;
 const oracleAddress = '0x5fbdb2315678afecb367f032d93f642f64180aa3';
 
@@ -56,6 +61,7 @@ io.on('connection', (socket) => {
       //console.log("here");
       //console.log("event = ", event);
       let data = JSON.parse(event.returnValues.requestUpdate);
+      data.RFQid = event.returnValues.requestId;
       console.log('Update from Oracle received:', data);
       socket.emit('oracleUpdate', data);
     }
@@ -97,7 +103,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  oracleContract.events.UpdatedRequest({}, async (error, event) => {
+  oracleContract.events.OracleResponse({}, async (error, event) => {
       if (error) {
         console.error(error);
       } else {
@@ -139,7 +145,7 @@ io.on('connection', (socket) => {
 });
 
 
-
+app.use(bodyParser.json());
 
 // Enable CORS
 app.use((req, res, next) => {
@@ -178,6 +184,24 @@ app.get('/callStartFunction', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error calling start function' });
+  }
+});
+
+app.post('/sendOrder', async (req, res) => {
+  const order = req.body;
+  //abh reqeustData structure is shared with client - should be in a shared model file
+  console.log('Received new order:', order);
+  let rfqId = order.RFQid;
+  try {
+    const result = await testRFQContract.methods.sendOrder(
+      rfqId,
+      JSON.stringify(order)
+    ).send({ from: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', gas: 500000 });
+    console.log("finished sending order");
+    res.status(200).json({ message: 'Send Order called on DLT', txHash: result.transactionHash });
+  }  catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error calling Send Order function' });
   }
 });
 
