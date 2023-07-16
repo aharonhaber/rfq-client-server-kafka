@@ -58,7 +58,7 @@ testRFQContract.events.OracleUpdate({}, (error, event) => {
     //console.log("here");
     //console.log("event = ", event);
     let data = JSON.parse(event.returnValues.requestUpdate);
-    data.RFQid = event.returnValues.requestId;
+    data.rfqId = event.returnValues.requestId;
     console.log('Update from Oracle received:', data);
     // Broadcast the event to all connected clients
     clients.forEach((client) => {
@@ -78,7 +78,7 @@ testRFQContract.events.SendOrderCalled({}, (error, event) => {
     //console.log("here");
     //console.log("event = ", event);
     let data = JSON.parse(event.returnValues.requestData);
-    data.RFQid = event.returnValues.requestId;
+    data.rfqId = event.returnValues.requestId;
     console.log('TestRFQContract Send Order Called received:', data);
     //socket.emit('reqeustData', data);
   }
@@ -220,10 +220,12 @@ app.get('/callStartFunction', async (req, res) => {
     console.log("calling startRFQ");
     let requestId = rfqId.toString();
     let requestData = {
-      MsgType: "StartRFQ",
-      RFQid: requestId,
+      msgType: "StartRFQ",
+      rfqId: requestId,
       symbol: "EURUSD",
       tenor: "Spot",
+      ccy: "EUR",
+      client:"Vanguard",
       qty: 1000000
     }
     const result = await testRFQContract.methods.startRFQ(
@@ -242,13 +244,13 @@ app.get('/callStartFunction', async (req, res) => {
 
 app.post('/sendOrder', async (req, res) => {
   const order = req.body.order;
-  order.MsgType = "NewOrder";
+  order.msgType = "NewOrder";
   // Create a new Date object representing the current UTC timestamp
   var currentTimestamp = new Date(Date.now()).toISOString();
   order.Timestamp = currentTimestamp;  
   //abh reqeustData structure is shared with client - should be in a shared model file
   console.log('Received new order:', order);  
-  let rfqId = order.RFQid;
+  let rfqId = order.rfqId;
   let orderAsString = JSON.stringify(order);
   console.log("sending order to dlt: ", orderAsString)
   try {
