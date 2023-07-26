@@ -1,5 +1,5 @@
 ////////////////////////////////////
-
+const axios = require('axios');
 const express = require('express');
 const bodyParser = require('body-parser');
 const app = express();
@@ -16,8 +16,30 @@ const io = require('socket.io')(http, {
 
 
 const Web3 = require('web3');
-const clients = new Set();
 
+
+//client to socket
+const clients = new Map();
+
+
+//rfqs to client
+const rfqs = new Map();
+
+// Function to find a value for a key in the Map
+const findInMap = (key, map) => {
+  console.log("find in map");
+  //map.forEach((value, ikey) => { console.log(`key ${ikey} value ${value} typeof key ${typeof ikey}`); } );   
+  console.log(`looking for key ${key} typeof key ${typeof key} `)
+  const value = map.get(key);
+  console.log(`value = ${value}`);
+  if (value === undefined) {
+    // Handle the case when the key (rfq) is not found in the map
+    console.log(`Value not found for key: ${key}`);
+  } else {
+    console.log(`Value for key ${key}: ${value}`);
+    return value;
+  }
+};
 
 
 
@@ -25,6 +47,8 @@ const WebsocketProvider = require('web3-providers-ws');
 
 // Create a new Web3 instance connected to your local Ethereum node
 const dltHostId = process.env.DLTHOSTIP || 'localhost'
+const eventHostId = process.env.EVENTHOSTIP || 'localhost'
+const eventHostPort = process.env.EVENTHOSTPORT || '3003'
 console.log("SETTING DLT HOST ID to " +  dltHostId);
 const web3 = new Web3(new WebsocketProvider('ws://' + dltHostId + ':8545'));
 
@@ -49,22 +73,29 @@ const oracleContract = new web3.eth.Contract(oracleABI, oracleAddress);
 
 // Listen for events from the smart contract
 
+
+
+
 testRFQContract.events.OracleUpdate({}, (error, event) => {
   if (error) {
     console.error(error);
   } else {
-    //console.log("OracleUpdate parsing : ",event.returnValues.requestUpdate)
-    //console.log("OracleUpdate event : ",event)
-    //console.log("here");
-    //console.log("event = ", event);
     let data = JSON.parse(event.returnValues.requestUpdate);
     data.rfqId = event.returnValues.requestId;
     console.log('Update from Oracle received:', data);
-    // Broadcast the event to all connected clients
-    clients.forEach((client) => {
-      client.emit('oracleUpdate', data);
-    });    
-
+    registerEvent("RFQ SC from Oracle", data.rfqId, "The testRFQContract received an OracleUpdate");  
+    
+    let client = findInMap(data.rfqId,rfqs)
+    if (client != undefined) {
+      let ws = findInMap(client, clients)
+      if (ws != undefined) {
+        ws.emit('oracleUpdate', data);
+      } else {
+        console.log(`cannot find websocket for client ${client}`)
+      }
+    } else {
+      console.log(`cannot find client for rfq ${data.rfqId}`)
+    }
   }
 });
   
@@ -80,6 +111,7 @@ testRFQContract.events.SendOrderCalled({}, (error, event) => {
     let data = JSON.parse(event.returnValues.requestData);
     data.rfqId = event.returnValues.requestId;
     console.log('TestRFQContract Send Order Called received:', data);
+    registerEvent("SendOrder Call - RFQObject", data.rfqId, "TestRFQ Obejct has posted event - SendOrder was called");       
     //socket.emit('reqeustData', data);
   }
 });
@@ -100,31 +132,10 @@ oracleContract.events.NewRequest({}, async (error, event) => {
     let data = JSON.parse(event.returnValues.requestData);
     //console.log("event = ", event)
     let oracleId = event.returnValues.oracleId;
+    let requestId = event.returnValues.requestId;    
     console.log('Oracle New Request event emitted:', data);
     console.log('Oracle request Id = :', oracleId);
-/* uncomment this to test publishing to dlt without oracle service
-    try {
-      // Call the start function
-      console.log("calling oracle update");
-      let updateData = {
-        symbol: "EURUSD",
-        tenor: "Spot",
-        price: "103.23455"
-      };
-
-      const result = await oracleContract.methods.updateRequest(
-        oracleId,
-        "12344",
-        JSON.stringify(updateData)
-      ).send(
-  
-        { from: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', gas: 500000 });
-      console.log("finished waiting for oracle update");
-    } catch (error) {
-      console.error(error);
-    }      
-*/
-
+    registerEvent("Oracle New Request", requestId, "Oracle Contract posted event: received a newrequest");    
   }
 });
 
@@ -140,7 +151,7 @@ oracleContract.events.NewTopicForRequest({}, async (error, event) => {
     console.log('Oracle New Topic for Request event emitted:', data);
     console.log('Oracle request Id = :', oracleId)
     console.log('Request Id = :', requestId)      
-
+    registerEvent("Oracle New Topic", requestId, "oracle contract posted event: New Topic for request");
   }
 });  
   
@@ -149,34 +160,7 @@ oracleContract.events.OracleResponse({}, async (error, event) => {
     if (error) {
       console.error(error);
     } else {
-      //console.log(event);
-      //let data = JSON.parse(event.returnValues.requestData);
-      //console.log("event = ", event)
-      //let oracleId = event.returnValues.oracleId;
-      //console.log('Oracle Updated Request event emitted:', data);
-      //console.log('Oracle request Id = :', oracleId);
-/*
-      try {
-        // Call the start function
-        console.log("calling oracle update");
-        let updateData = {
-          symbol: "EURUSD",
-          tenor: "Spot",
-          price: "103.23455"
-        };
-
-        const result = await oracleContract.methods.updateRequest(
-          oracleId,
-          "12344",
-          JSON.stringify(updateData)
-        ).send(
-    
-          { from: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', gas: 500000 });
-        console.log("finished waiting for oracle update");
-      } catch (error) {
-        console.error(error);
-      }      
-*/
+      console.log("Oracle Response event received");
 
     }
 });
@@ -185,15 +169,30 @@ oracleContract.events.OracleResponse({}, async (error, event) => {
 // WebSocket connection
 io.on('connection', (socket) => {
   console.log('A user connected');
-  clients.add(socket);
+
 
   socket.on('close', () => {
-    console.log('Client disconnected.');
-    clients.delete(ws);
+    // Handle WebSocket connection closure
+    for (const [clientId, clientWs] of clients.entries()) {
+      if (clientWs === socket) {
+        clients.delete(clientId); // Remove the client Id and WebSocket connection on closure
+        console.log(`Client ${clientId} disconnected.`);
+        break;
+      }
+    }
+  });
+
+  socket.on('register', (message) => {
+    console.log(message);
+    const clientId = message.clientId;    
+    clients.set(clientId, socket); // Store the client Id and WebSocket connection
+    console.log(`Client ${clientId} registered.`);
   });
 
 
 });
+
+
 
 
 app.use(bodyParser.json());
@@ -211,23 +210,61 @@ function getRandomMinMax(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+function registerEvent (_name, _id, _description) {
+
+  console.log("register event called");
+  const _clientTime = new Date().toISOString();
+
+  const eventData = {
+    module: "UI Server",
+    clientTime: _clientTime,
+    name: _name,
+    id: _id,
+    description: _description
+  };
+  
+  axios.post('http://'+eventHostId+':'+eventHostPort+'/registerEvent', eventData)
+    .then((response) => {
+      console.log('Event registered successfully');
+    })
+    .catch((error) => {
+      console.error('Failed to register event - is the server running?');
+    });  
+
+}
 
 // REST API endpoint to call the start function of the smart contract
-app.get('/callStartFunction', async (req, res) => {
+app.post('/startRFQ', async (req, res) => {
   try {
+    console.log("req = ", req.body);
+    const ccyPair  = req.body.ccyPair;
+    const clientId = req.body.clientId;
     let rfqId = getRandomMinMax(1,10000);
     // Call the start function
-    console.log("calling startRFQ");
+
+    //store the mapping of client to rfq so when events come for rfq can be sent to the specific client
+    console.log(`mapping ${rfqId} to ${clientId}`)
+    console.log("1 rfqs size is ", rfqs.size);
+    rfqs.set(String(rfqId), clientId);
+    console.log("2 rfqs size is ", rfqs.size);    
+    rfqs.forEach((value, key) => { console.log(`key ${key} value ${value}`); } );
+    console.log("3 rfqs size is ", rfqs.size);
+
     let requestId = rfqId.toString();
     let requestData = {
       msgType: "StartRFQ",
       rfqId: requestId,
-      symbol: "EURUSD",
+      symbol: ccyPair,
       tenor: "Spot",
-      ccy: "EUR",
-      client:"Vanguard",
+      ccy: ccyPair.substring(0,3),
+      client:"CitiClient",
       qty: 1000000
     }
+    console.log("calling startRFQ with ", requestData);
+
+
+    registerEvent("Start RFQ", rfqId, "rfsserver calling startRFQ of testRFQContract");
+
     const result = await testRFQContract.methods.startRFQ(
       requestId,
       JSON.stringify(requestData)
@@ -236,10 +273,12 @@ app.get('/callStartFunction', async (req, res) => {
       { from: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', gas: 500000 });
     console.log("finished waiting for startRFQ");
     res.status(200).json({ message: 'Start function called', txHash: result.transactionHash });
+  
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error calling start function' });
   }
+ 
 });
 
 app.post('/sendOrder', async (req, res) => {
@@ -254,6 +293,7 @@ app.post('/sendOrder', async (req, res) => {
   let orderAsString = JSON.stringify(order);
   console.log("sending order to dlt: ", orderAsString)
   try {
+    registerEvent("SendOrder", rfqId, "rfsserver calling SendOrder of TestRFQContract");
     const result = await testRFQContract.methods.sendOrder(
       rfqId,
       orderAsString,
@@ -268,5 +308,5 @@ app.post('/sendOrder', async (req, res) => {
 
 // Start the server
 http.listen(3001, () => {
-  console.log('Server is running on port 3000');
+  console.log('Server is running on port 3001');
 });
