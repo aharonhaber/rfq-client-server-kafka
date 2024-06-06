@@ -3,11 +3,16 @@ const bodyParser = require('body-parser');
 const http = require('http');
 const socketIo = require('socket.io');
 const axios = require('axios');
+const cors = require('cors');
 const { connectProducer, connectConsumer, sendMessage, consumeMessages } = require('./kafkaInterface');
 
 const app = express();
 // Middleware to parse JSON bodies
 app.use(bodyParser.json());
+
+app.use(cors({
+  origin: '*'
+}));
 
 const server = http.createServer(app);
 const io = socketIo(server, {
