@@ -1,11 +1,10 @@
 #!/bin/bash
-# give chance to dlt to be initialized
-#echo WAITING FOR DLT TO BE INITIALIZED....
-#sleep 30
+# Export environment variables for Kafka
+export KAFKAHOSTIP=${KAFKAHOSTIP}
+export KAFKAHOSTPORT=${KAFKAHOSTPORT}
 
-# Start Hardhat node in the background
+# Start the Node.js application
 node app.js
-
 
 # Keep the container running
 tail -f /dev/null
